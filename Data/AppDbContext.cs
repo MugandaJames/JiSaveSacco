@@ -1,5 +1,6 @@
 ﻿using JiSaveSacco.API.Models;
 using Microsoft.EntityFrameworkCore;
+using BCrypt.Net;
 
 namespace JiSaveSacco.API.Data
 {
@@ -50,6 +51,20 @@ namespace JiSaveSacco.API.Data
 
             modelBuilder.Entity<Member>()
                 .HasIndex(m => m.NationalId)
+                .IsUnique();
+
+            // =====================
+            // USER ↔ MEMBER (1 : 1)
+            // =====================
+
+            modelBuilder.Entity<User>()
+                .HasOne(u => u.Member)
+                .WithOne(m => m.User)
+                .HasForeignKey<Member>(m => m.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Member>()
+                .HasIndex(m => m.UserId)
                 .IsUnique();
 
             // =====================
@@ -109,6 +124,18 @@ namespace JiSaveSacco.API.Data
                 .WithMany(u => u.Reports)
                 .HasForeignKey(r => r.GeneratedBy)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<User>().HasData(
+                new User
+                {
+                    UserId = 1,
+                    Username = "admin",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin123!"),
+                    Role = "Admin",
+                    Status = "Active",
+                    CreatedAt = new DateTime(2026, 1, 1)
+                }
+            );
         }
     }
 }

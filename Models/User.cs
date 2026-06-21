@@ -19,7 +19,8 @@ namespace JiSaveSacco.API.Models
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-        // Navigation Properties
+        // One-to-one relationship
+        public Member? Member { get; set; }
 
         public ICollection<AuditLog> AuditLogs { get; set; }
             = new List<AuditLog>();

@@ -3,6 +3,7 @@ using System;
 using JiSaveSacco.API.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace JiSaveSacco.API.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260621133319_AddUserMemberRelationship")]
+    partial class AddUserMemberRelationship
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -340,17 +343,6 @@ namespace JiSaveSacco.API.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
-
-                    b.HasData(
-                        new
-                        {
-                            UserId = 1,
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            PasswordHash = "$2a$11$.Ia6nRXBNq17hDpmLdZ.6eqERdAkO17mYcU9RdjC44g7eqrMoSmx.",
-                            Role = "Admin",
-                            Status = "Active",
-                            Username = "admin"
-                        });
                 });
 
             modelBuilder.Entity("JiSaveSacco.API.Models.AuditLog", b =>

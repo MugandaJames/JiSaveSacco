@@ -7,6 +7,9 @@ namespace JiSaveSacco.API.Models
     {
         public int MemberId { get; set; }
 
+        // Foreign key to User
+        public int UserId { get; set; }
+
         public string MemberNo { get; set; } = string.Empty;
 
         public string FirstName { get; set; } = string.Empty;
@@ -29,10 +32,10 @@ namespace JiSaveSacco.API.Models
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-
         public string FullName => $"{FirstName} {LastName}";
 
-        // Navigation Properties
+        // Navigation to User
+        public User User { get; set; } = null!;
 
         public ICollection<SavingsTransaction> SavingsTransactions { get; set; }
             = new List<SavingsTransaction>();
