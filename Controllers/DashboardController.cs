@@ -29,19 +29,19 @@ namespace JiSaveSacco.API.Controllers
             var totalMembers = await _context.Members.CountAsync();
 
             var activeLoans = await _context.Loans
-                .Where(l => l.Status == "Approved")
-                .CountAsync();
+                .CountAsync(l => l.Status == "Approved");
 
             var pendingLoans = await _context.Loans
-                .Where(l => l.Status == "Pending")
-                .CountAsync();
+                .CountAsync(l => l.Status == "Pending");
 
             var totalSavings = await _context.SavingsTransactions
-                .SumAsync(s => s.Amount);
+                .Select(s => (decimal?)s.Amount)
+                .SumAsync() ?? 0;
 
             var loanExposure = await _context.Loans
                 .Where(l => l.Status == "Approved")
-                .SumAsync(l => l.OutstandingBalance);
+                .Select(l => (decimal?)l.OutstandingBalance)
+                .SumAsync() ?? 0;
 
             var recentLoans = await _context.Loans
                 .OrderByDescending(l => l.ApplicationDate)
@@ -73,7 +73,8 @@ namespace JiSaveSacco.API.Controllers
 
             var savings = await _context.SavingsTransactions
                 .Where(s => s.MemberId == memberId)
-                .SumAsync(s => s.Amount);
+                .Select(s => (decimal?)s.Amount)
+                .SumAsync() ?? 0;
 
             var loans = await _context.Loans
                 .Where(l => l.MemberId == memberId)
@@ -81,11 +82,11 @@ namespace JiSaveSacco.API.Controllers
 
             var loanBalance = await _context.Loans
                 .Where(l => l.MemberId == memberId && l.Status == "Approved")
-                .SumAsync(l => l.OutstandingBalance);
+                .Select(l => (decimal?)l.OutstandingBalance)
+                .SumAsync() ?? 0;
 
             var notifications = await _context.Notifications
-                .Where(n => n.MemberId == memberId && !n.IsRead)
-                .CountAsync();
+                .CountAsync(n => n.MemberId == memberId && !n.IsRead);
 
             return Ok(new
             {

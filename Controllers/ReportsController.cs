@@ -13,15 +13,20 @@ namespace JiSaveSacco.API.Controllers
     {
         private readonly AppDbContext _context;
         private readonly IdentityService _identity;
+        private readonly AuditService _audit;
 
-        public ReportsController(AppDbContext context, IdentityService identity)
+        public ReportsController(
+            AppDbContext context,
+            IdentityService identity,
+            AuditService audit)
         {
             _context = context;
             _identity = identity;
+            _audit = audit;
         }
 
         // =========================
-        // TOTAL SAVINGS (ADMIN)
+        // TOTAL SAVINGS
         // =========================
         [Authorize(Roles = "Admin")]
         [HttpGet("total-savings")]
@@ -30,11 +35,14 @@ namespace JiSaveSacco.API.Controllers
             var total = await _context.SavingsTransactions
                 .SumAsync(s => s.Amount);
 
-            return Ok(new { totalSavings = total });
+            return Ok(new
+            {
+                totalSavings = total
+            });
         }
 
         // =========================
-        // ACTIVE LOANS (ADMIN)
+        // ACTIVE LOANS
         // =========================
         [Authorize(Roles = "Admin")]
         [HttpGet("active-loans")]
@@ -43,11 +51,14 @@ namespace JiSaveSacco.API.Controllers
             var loans = await _context.Loans
                 .CountAsync(l => l.Status == "Approved");
 
-            return Ok(new { activeLoans = loans });
+            return Ok(new
+            {
+                activeLoans = loans
+            });
         }
 
         // =========================
-        // LOAN EXPOSURE (ADMIN)
+        // LOAN EXPOSURE
         // =========================
         [Authorize(Roles = "Admin")]
         [HttpGet("loan-exposure")]
@@ -57,11 +68,14 @@ namespace JiSaveSacco.API.Controllers
                 .Where(l => l.Status == "Approved")
                 .SumAsync(l => l.OutstandingBalance);
 
-            return Ok(new { totalLoanExposure = total });
+            return Ok(new
+            {
+                totalLoanExposure = total
+            });
         }
 
         // =========================
-        // MEMBER SUMMARY (ADMIN)
+        // MEMBER SUMMARY
         // =========================
         [Authorize(Roles = "Admin")]
         [HttpGet("member-summary")]
@@ -84,7 +98,7 @@ namespace JiSaveSacco.API.Controllers
         }
 
         // =========================
-        // MY PERSONAL REPORT (MEMBER SAFE)
+        // MY REPORT
         // =========================
         [Authorize(Roles = "Member")]
         [HttpGet("my-report")]
@@ -117,7 +131,7 @@ namespace JiSaveSacco.API.Controllers
         }
 
         // =========================
-        // LOG REPORT GENERATION (ADMIN)
+        // LOG REPORT GENERATION
         // =========================
         [Authorize(Roles = "Admin")]
         [HttpPost("log")]
@@ -126,13 +140,24 @@ namespace JiSaveSacco.API.Controllers
             var report = new Report
             {
                 ReportType = reportType,
-                GeneratedAt = DateTime.UtcNow
+                GeneratedAt = DateTime.UtcNow,
+                GeneratedBy = _identity.GetUserId()
             };
 
             _context.Reports.Add(report);
             await _context.SaveChangesAsync();
 
-            return Ok("Report logged");
+            await _audit.Log(
+                _identity.GetUserId(),
+                $"Generated {reportType} report",
+                "Reports",
+                report.ReportId);
+
+            return Ok(new
+            {
+                message = "Report logged successfully",
+                reportId = report.ReportId
+            });
         }
     }
 }

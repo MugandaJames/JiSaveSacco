@@ -30,7 +30,22 @@ namespace JiSaveSacco.API.Controllers
         }
 
         // =========================
-        // APPLY FOR LOAN (SECURE)
+        // GET PENDING LOANS (ADMIN)
+        // =========================
+        [Authorize(Roles = "Admin")]
+        [HttpGet("pending")]
+        public async Task<IActionResult> GetPendingLoans()
+        {
+            var loans = await _context.Loans
+                .Where(l => l.Status == "Pending")
+                .OrderByDescending(l => l.ApplicationDate)
+                .ToListAsync();
+
+            return Ok(loans);
+        }
+
+        // =========================
+        // APPLY FOR LOAN (MEMBER)
         // =========================
         [Authorize(Roles = "Member")]
         [HttpPost("apply")]
@@ -38,16 +53,15 @@ namespace JiSaveSacco.API.Controllers
         {
             var memberId = _identity.GetMemberId();
 
-            if (memberId == null)
-                return Unauthorized("No member linked to account");
+            if (memberId is null)
+                return Unauthorized("Member identity missing");
 
             var loan = new Loan
             {
                 MemberId = memberId.Value,
                 LoanAmount = dto.LoanAmount,
                 InterestRate = dto.InterestRate,
-                OutstandingBalance =
-                    dto.LoanAmount + (dto.LoanAmount * dto.InterestRate / 100),
+                OutstandingBalance = dto.LoanAmount + (dto.LoanAmount * dto.InterestRate / 100),
                 Status = "Pending",
                 ApplicationDate = DateTime.UtcNow
             };
@@ -55,7 +69,12 @@ namespace JiSaveSacco.API.Controllers
             _context.Loans.Add(loan);
             await _context.SaveChangesAsync();
 
-            await _audit.Log(null, "Applied for loan", "Loans", loan.LoanId);
+            await _audit.Log(
+                _identity.GetUserId(),
+                "Applied for loan",
+                "Loans",
+                loan.LoanId
+            );
 
             return Ok(new
             {
@@ -74,7 +93,7 @@ namespace JiSaveSacco.API.Controllers
         {
             var loan = await _context.Loans.FindAsync(loanId);
 
-            if (loan == null)
+            if (loan is null)
                 return NotFound("Loan not found");
 
             if (loan.Status != "Pending")
@@ -85,7 +104,12 @@ namespace JiSaveSacco.API.Controllers
 
             await _context.SaveChangesAsync();
 
-            await _audit.Log(null, "Approved loan", "Loans", loanId);
+            await _audit.Log(
+                _identity.GetUserId(),
+                "Approved loan",
+                "Loans",
+                loan.LoanId
+            );
 
             await _notify.Send(
                 loan.MemberId,
@@ -105,14 +129,22 @@ namespace JiSaveSacco.API.Controllers
         {
             var loan = await _context.Loans.FindAsync(loanId);
 
-            if (loan == null)
+            if (loan is null)
                 return NotFound("Loan not found");
+
+            if (loan.Status != "Pending")
+                return BadRequest("Loan already processed");
 
             loan.Status = "Rejected";
 
             await _context.SaveChangesAsync();
 
-            await _audit.Log(null, "Rejected loan", "Loans", loanId);
+            await _audit.Log(
+                _identity.GetUserId(),
+                "Rejected loan",
+                "Loans",
+                loan.LoanId
+            );
 
             await _notify.Send(
                 loan.MemberId,
@@ -124,7 +156,7 @@ namespace JiSaveSacco.API.Controllers
         }
 
         // =========================
-        // LOAN REPAYMENT (SECURE)
+        // LOAN REPAYMENT (MEMBER) — FIXED SAFETY LOGIC
         // =========================
         [Authorize(Roles = "Member")]
         [HttpPost("repay")]
@@ -132,21 +164,32 @@ namespace JiSaveSacco.API.Controllers
         {
             var memberId = _identity.GetMemberId();
 
-            var loan = await _context.Loans
-                .FirstOrDefaultAsync(l => l.LoanId == dto.LoanId
-                                       && l.MemberId == memberId);
+            if (memberId is null)
+                return Unauthorized("Member identity missing");
 
-            if (loan == null)
+            var loan = await _context.Loans
+                .FirstOrDefaultAsync(l =>
+                    l.LoanId == dto.LoanId &&
+                    l.MemberId == memberId);
+
+            if (loan is null)
                 return NotFound("Loan not found");
 
             if (loan.Status != "Approved")
                 return BadRequest("Loan is not active");
 
+            if (dto.AmountPaid <= 0)
+                return BadRequest("Payment must be greater than zero");
+
+            if (dto.AmountPaid > loan.OutstandingBalance)
+                return BadRequest("Payment exceeds outstanding balance");
+
+            // safe deduction
             loan.OutstandingBalance -= dto.AmountPaid;
 
             var repayment = new LoanRepayment
             {
-                LoanId = dto.LoanId,
+                LoanId = loan.LoanId,
                 AmountPaid = dto.AmountPaid,
                 RemainingBalance = loan.OutstandingBalance,
                 PaymentDate = DateTime.UtcNow
@@ -154,15 +197,20 @@ namespace JiSaveSacco.API.Controllers
 
             _context.LoanRepayments.Add(repayment);
 
-            if (loan.OutstandingBalance <= 0)
+            // auto close loan
+            if (loan.OutstandingBalance == 0)
             {
                 loan.Status = "Paid";
-                loan.OutstandingBalance = 0;
             }
 
             await _context.SaveChangesAsync();
 
-            await _audit.Log(null, "Loan repayment", "LoanRepayments", dto.LoanId);
+            await _audit.Log(
+                _identity.GetUserId(),
+                "Loan repayment",
+                "LoanRepayments",
+                repayment.RepaymentId
+            );
 
             await _notify.Send(
                 loan.MemberId,
@@ -178,7 +226,7 @@ namespace JiSaveSacco.API.Controllers
         }
 
         // =========================
-        // GET MY LOANS (SECURE)
+        // GET MY LOANS (MEMBER)
         // =========================
         [Authorize(Roles = "Member")]
         [HttpGet("my-loans")]
@@ -186,8 +234,12 @@ namespace JiSaveSacco.API.Controllers
         {
             var memberId = _identity.GetMemberId();
 
+            if (memberId is null)
+                return Unauthorized("Member identity missing");
+
             var loans = await _context.Loans
                 .Where(l => l.MemberId == memberId)
+                .OrderByDescending(l => l.ApplicationDate)
                 .ToListAsync();
 
             return Ok(loans);

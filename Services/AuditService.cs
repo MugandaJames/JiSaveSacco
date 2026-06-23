@@ -12,18 +12,23 @@ namespace JiSaveSacco.API.Services
             _context = context;
         }
 
-        public async Task Log(int? userId, string action, string table, int recordId)
+        public async Task Log(
+            int? userId,
+            string action,
+            string tableAffected,
+            int recordId)
         {
-            var log = new AuditLog
+            var auditLog = new AuditLog
             {
                 UserId = userId,
                 Action = action,
-                TableAffected = table,
+                TableAffected = tableAffected,
                 RecordId = recordId,
                 ActionDate = DateTime.UtcNow
             };
 
-            _context.AuditLogs.Add(log);
+            _context.AuditLogs.Add(auditLog);
+
             await _context.SaveChangesAsync();
         }
     }
