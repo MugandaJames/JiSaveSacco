@@ -1,21 +1,46 @@
 using JiSaveSacco.API.Data;
-using Microsoft.EntityFrameworkCore;
+using JiSaveSacco.API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
-using JiSaveSacco.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add controllers
-builder.Services.AddControllers();
-builder.Services.AddScoped<JwtService>();
+// =====================================
+// Services
+// =====================================
 
+builder.Services.AddControllers();
+
+builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<IdentityService>();
 
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<IdentityService>();
+
+// =====================================
+// CORS
+// =====================================
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy
+            .WithOrigins(
+                "http://127.0.0.1:5500",
+                "http://localhost:5500"
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
+// =====================================
+// JWT Authentication
+// =====================================
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -31,17 +56,24 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = builder.Configuration["Jwt:Audience"],
 
             IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)
+            )
         };
     });
 
 builder.Services.AddAuthorization();
 
+// =====================================
 // Swagger
+// =====================================
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Database connection (MySQL)
+// =====================================
+// Database
+// =====================================
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     options.UseMySql(
@@ -52,14 +84,24 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 var app = builder.Build();
 
-// Swagger UI
+// =====================================
+// Development
+// =====================================
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
+// =====================================
+// Middleware
+// =====================================
+
 app.UseHttpsRedirection();
+
+app.UseCors("AllowFrontend");
+
 app.UseAuthentication();
 
 app.UseAuthorization();

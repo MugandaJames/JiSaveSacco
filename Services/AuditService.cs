@@ -18,6 +18,9 @@ namespace JiSaveSacco.API.Services
             string tableAffected,
             int recordId)
         {
+            if (userId == null)
+                throw new Exception("Audit log must have a valid userId");
+
             var auditLog = new AuditLog
             {
                 UserId = userId,
@@ -27,9 +30,8 @@ namespace JiSaveSacco.API.Services
                 ActionDate = DateTime.UtcNow
             };
 
-            _context.AuditLogs.Add(auditLog);
-
-            await _context.SaveChangesAsync();
+            await _context.AuditLogs.AddAsync(auditLog);
+            await _context.SaveChangesAsync(); // FIXED: Saves tracking data changes to DB
         }
     }
 }

@@ -48,6 +48,39 @@ namespace JiSaveSacco.API.Controllers
             return Ok(members);
         }
 
+        // =========================================================
+        // MEMBER: FETCH MY SECURE COMPLETE PROFILE SNAPSHOT
+        // =========================================================
+        [Authorize(Roles = "Member")]
+        [HttpGet("me")]
+        public async Task<IActionResult> GetMyProfile()
+        {
+            // Extract the true Member ID securely from the JWT token claims pipeline
+            var memberId = _identity.GetMemberId();
+            if (memberId == null)
+                return Unauthorized("Member identity context missing or corrupted.");
+
+            var member = await _context.Members
+                .Where(m => m.MemberId == memberId)
+                .Select(m => new
+                {
+                    m.MemberId,
+                    m.MemberNo,
+                    m.FirstName,
+                    m.LastName,
+                    m.Email,
+                    m.Phone,
+                    m.Status,
+                    m.CreatedAt
+                })
+                .FirstOrDefaultAsync();
+
+            if (member == null)
+                return NotFound("Member profile record could not be found in the database registry.");
+
+            return Ok(member);
+        }
+
         // =========================
         // GET MEMBER BY ID
         // =========================
@@ -60,35 +93,6 @@ namespace JiSaveSacco.API.Controllers
 
             if (member is null)
                 return NotFound("Member not found");
-
-            return Ok(new MemberResponseDto
-            {
-                MemberId = member.MemberId,
-                MemberNo = member.MemberNo,
-                FullName = member.FirstName + " " + member.LastName,
-                Phone = member.Phone,
-                Email = member.Email,
-                Status = member.Status
-            });
-        }
-
-        // =========================
-        // MY PROFILE (SECURE)
-        // =========================
-        [Authorize(Roles = "Member")]
-        [HttpGet("me")]
-        public async Task<IActionResult> GetMyProfile()
-        {
-            var memberId = _identity.GetMemberId();
-
-            if (memberId is null)
-                return Unauthorized("Member identity missing");
-
-            var member = await _context.Members
-                .FirstOrDefaultAsync(m => m.MemberId == memberId);
-
-            if (member is null)
-                return NotFound("Member profile not found");
 
             return Ok(new MemberResponseDto
             {

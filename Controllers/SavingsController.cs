@@ -1,10 +1,12 @@
 ﻿using JiSaveSacco.API.Data;
-using JiSaveSacco.API.DTOs.Savings;
 using JiSaveSacco.API.Models;
 using JiSaveSacco.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+// Import both namespaces because the files are split across folders in your Solution Explorer
+using JiSaveSacco.API.DTOs;          // For MemberWithdrawDto
+using JiSaveSacco.API.DTOs.Savings;  // For MemberDepositDto and SavingsResponseDto
 
 namespace JiSaveSacco.API.Controllers
 {
@@ -30,87 +32,68 @@ namespace JiSaveSacco.API.Controllers
         }
 
         // =========================================================
-        // ADMIN / STAFF: MANUAL TRANSACTION ENTRY (LEDGER CONTROL)
+        // MEMBER: GET MY PERSONAL SAVINGS TRANSACTION HISTORY TRAIL
         // =========================================================
-        [Authorize(Roles = "Admin,Staff")]
-        [HttpPost]
-        public async Task<IActionResult> AddTransaction(CreateSavingsDto dto)
+        [Authorize(Roles = "Member")]
+        [HttpGet("my-transactions")]
+        public async Task<IActionResult> GetMyTransactions()
         {
-            var member = await _context.Members
-                .FirstOrDefaultAsync(m => m.MemberId == dto.MemberId);
+            var memberId = _identity.GetMemberId();
+            if (memberId is null)
+                return Unauthorized("Member identity context missing.");
 
-            if (member is null)
-                return NotFound("Member not found");
+            // Pull transactions belonging to this member, sorted newest first
+            var transactions = await _context.SavingsTransactions
+                .Where(t => t.MemberId == memberId)
+                .OrderByDescending(t => t.TransactionDate)
+                .Select(t => new
+                {
+                    // Perfectly maps to what your dashboard.js core parsing loops expect
+                    TransactionDate = t.TransactionDate,
+                    TransactionType = t.TransactionType,
+                    Amount = t.Amount,
+                    BalanceAfter = t.BalanceAfter
+                })
+                .ToListAsync();
 
-            var lastBalance = await _context.SavingsTransactions
-                .Where(s => s.MemberId == dto.MemberId)
-                .OrderByDescending(s => s.SavingId)
-                .Select(s => (decimal?)s.BalanceAfter)
-                .FirstOrDefaultAsync() ?? 0m;
-
-            var type = dto.TransactionType.Trim().ToLower();
-
-            decimal newBalance;
-
-            if (type == "deposit")
-                newBalance = lastBalance + dto.Amount;
-
-            else if (type == "withdrawal")
-            {
-                if (dto.Amount > lastBalance)
-                    return BadRequest("Insufficient funds");
-
-                newBalance = lastBalance - dto.Amount;
-            }
-            else
-            {
-                return BadRequest("Invalid transaction type");
-            }
-
-            var tx = new SavingsTransaction
-            {
-                MemberId = dto.MemberId,
-                Amount = dto.Amount,
-                TransactionType = type,
-                BalanceAfter = newBalance,
-                TransactionDate = DateTime.UtcNow
-            };
-
-            _context.SavingsTransactions.Add(tx);
-            await _context.SaveChangesAsync();
-
-            await _audit.Log(
-                _identity.GetUserId(),
-                $"ADMIN {type.ToUpper()}",
-                "SavingsTransactions",
-                tx.SavingId
-            );
-
-            await _notify.Send(
-                dto.MemberId,
-                "Savings Update",
-                $"A {type} of {dto.Amount} was recorded. Balance: {newBalance}"
-            );
-
-            return Ok(new SavingsResponseDto
-            {
-                SavingId = tx.SavingId,
-                Amount = tx.Amount,
-                TransactionType = tx.TransactionType,
-                BalanceAfter = tx.BalanceAfter,
-                TransactionDate = tx.TransactionDate
-            });
+            return Ok(transactions);
         }
 
         // =========================================================
-        // MEMBER: SELF DEPOSIT (SECURE - NO MEMBER ID INPUT)
+        // ADMIN / STAFF: GET ALL MEMBER SAVINGS WITH DETAILS
+        // =========================================================
+        [Authorize(Roles = "Admin,Staff")]
+        [HttpGet("admin-overview")]
+        public async Task<IActionResult> GetAdminSavingsOverview()
+        {
+            var overview = await _context.Members
+                .Select(m => new
+                {
+                    m.MemberId,
+                    m.MemberNo,
+                    FullName = m.FirstName + " " + m.LastName,
+                    m.Phone,
+                    m.Email,
+                    m.Status,
+                    TotalSaved = _context.SavingsTransactions
+                        .Where(s => s.MemberId == m.MemberId)
+                        .OrderByDescending(s => s.SavingId)
+                        .Select(s => s.BalanceAfter)
+                        .FirstOrDefault()
+                })
+                .ToListAsync();
+
+            return Ok(overview);
+        }
+
+        // =========================================================
+        // MEMBER: SELF DEPOSIT (SECURE)
         // =========================================================
         [Authorize(Roles = "Member")]
         [HttpPost("deposit")]
-        public async Task<IActionResult> MemberDeposit(MemberDepositDto dto)
+        public async Task<IActionResult> MemberDeposit([FromBody] MemberDepositDto dto)
         {
             var memberId = _identity.GetMemberId();
-
             if (memberId is null)
                 return Unauthorized("Member identity missing");
 
@@ -134,24 +117,10 @@ namespace JiSaveSacco.API.Controllers
             _context.SavingsTransactions.Add(tx);
             await _context.SaveChangesAsync();
 
-            await _audit.Log(
-                _identity.GetUserId(),
-                "MEMBER DEPOSIT",
-                "SavingsTransactions",
-                tx.SavingId
-            );
+            await _audit.Log(_identity.GetUserId(), "MEMBER DEPOSIT", "SavingsTransactions", tx.SavingId);
+            await _notify.Send(memberId.Value, "Deposit Successful", $"Deposit of {dto.Amount} received. Balance: {newBalance}");
 
-            await _notify.Send(
-                memberId.Value,
-                "Deposit Successful",
-                $"Deposit of {dto.Amount} received. Balance: {newBalance}"
-            );
-
-            return Ok(new
-            {
-                message = "Deposit successful",
-                balance = newBalance
-            });
+            return Ok(new { message = "Deposit successful", balance = newBalance });
         }
 
         // =========================================================
@@ -162,7 +131,6 @@ namespace JiSaveSacco.API.Controllers
         public async Task<IActionResult> GetMyStatement()
         {
             var memberId = _identity.GetMemberId();
-
             if (memberId is null)
                 return Unauthorized("Member identity missing");
 
@@ -182,13 +150,14 @@ namespace JiSaveSacco.API.Controllers
             return Ok(transactions);
         }
 
-
+        // =========================================================
+        // MEMBER: WITHDRAW
+        // =========================================================
         [Authorize(Roles = "Member")]
         [HttpPost("withdraw")]
         public async Task<IActionResult> MemberWithdraw([FromBody] MemberWithdrawDto dto)
         {
             var memberId = _identity.GetMemberId();
-
             if (memberId is null)
                 return Unauthorized("Member identity missing");
 
@@ -218,24 +187,10 @@ namespace JiSaveSacco.API.Controllers
             _context.SavingsTransactions.Add(tx);
             await _context.SaveChangesAsync();
 
-            await _audit.Log(
-                _identity.GetUserId(),
-                "MEMBER WITHDRAWAL",
-                "SavingsTransactions",
-                tx.SavingId
-            );
+            await _audit.Log(_identity.GetUserId(), "MEMBER WITHDRAWAL", "SavingsTransactions", tx.SavingId);
+            await _notify.Send(memberId.Value, "Withdrawal Successful", $"Withdrawal of {dto.Amount} processed. Balance: {newBalance}");
 
-            await _notify.Send(
-                memberId.Value,
-                "Withdrawal Successful",
-                $"Withdrawal of {dto.Amount} processed. Balance: {newBalance}"
-            );
-
-            return Ok(new
-            {
-                message = "Withdrawal successful",
-                balance = newBalance
-            });
+            return Ok(new { message = "Withdrawal successful", balance = newBalance });
         }
 
         // =========================================================
@@ -246,7 +201,6 @@ namespace JiSaveSacco.API.Controllers
         public async Task<IActionResult> GetBalance()
         {
             var memberId = _identity.GetMemberId();
-
             if (memberId is null)
                 return Unauthorized("Member identity missing");
 

@@ -2,6 +2,7 @@
 using JiSaveSacco.API.DTOs;
 using JiSaveSacco.API.Models;
 using JiSaveSacco.API.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using BCrypt.Net;
@@ -14,11 +15,16 @@ namespace JiSaveSacco.API.Controllers
     {
         private readonly AppDbContext _context;
         private readonly JwtService _jwtService;
+        private readonly IdentityService _identity; // Injected to cleanly pull user identity context from claims
 
-        public AuthController(AppDbContext context, JwtService jwtService)
+        public AuthController(
+            AppDbContext context,
+            JwtService jwtService,
+            IdentityService identity)
         {
             _context = context;
             _jwtService = jwtService;
+            _identity = identity;
         }
 
         // =========================
@@ -27,13 +33,55 @@ namespace JiSaveSacco.API.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterDto dto)
         {
+            // Check username
             var existingUser = await _context.Users
                 .FirstOrDefaultAsync(u => u.Username == dto.Username);
 
             if (existingUser != null)
-                return BadRequest("Username already exists");
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Username already exists"
+                });
+            }
 
-            // 1. Create User
+            // Check National ID
+            var existingNationalId = await _context.Members
+                .FirstOrDefaultAsync(m => m.NationalId == dto.NationalId);
+
+            if (existingNationalId != null)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "National ID already registered"
+                });
+            }
+
+            // Check Email
+            var existingEmail = await _context.Members
+                .FirstOrDefaultAsync(m => m.Email == dto.Email);
+
+            if (existingEmail != null)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Email already registered"
+                });
+            }
+
+            // Generate Member Number
+            var lastMember = await _context.Members
+                .OrderByDescending(m => m.MemberId)
+                .FirstOrDefaultAsync();
+
+            string memberNo = lastMember == null
+                ? "M001"
+                : $"M{lastMember.MemberId + 1:D3}";
+
+            // Create User
             var user = new User
             {
                 Username = dto.Username,
@@ -45,11 +93,11 @@ namespace JiSaveSacco.API.Controllers
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
-            // 2. Create Member Profile
+            // Create Member
             var member = new Member
             {
                 UserId = user.UserId,
-                MemberNo = dto.MemberNo,
+                MemberNo = memberNo,
                 FirstName = dto.FirstName,
                 LastName = dto.LastName,
                 NationalId = dto.NationalId,
@@ -65,8 +113,10 @@ namespace JiSaveSacco.API.Controllers
 
             return Ok(new
             {
+                success = true,
                 message = "Registration successful. Await admin approval.",
-                memberId = member.MemberId
+                memberId = member.MemberId,
+                memberNo = member.MemberNo
             });
         }
 
@@ -80,28 +130,70 @@ namespace JiSaveSacco.API.Controllers
                 .FirstOrDefaultAsync(u => u.Username == request.Username);
 
             if (user == null)
-                return Unauthorized("Invalid username or password");
+            {
+                return Unauthorized(new
+                {
+                    success = false,
+                    message = "Invalid username or password"
+                });
+            }
 
             bool isPasswordValid = BCrypt.Net.BCrypt.Verify(
                 request.Password,
-                user.PasswordHash
-            );
+                user.PasswordHash);
 
             if (!isPasswordValid)
-                return Unauthorized("Invalid username or password");
+            {
+                return Unauthorized(new
+                {
+                    success = false,
+                    message = "Invalid username or password"
+                });
+            }
 
             var member = await _context.Members
                 .FirstOrDefaultAsync(m => m.UserId == user.UserId);
 
             var token = _jwtService.GenerateToken(user, member?.MemberId);
 
-            return Ok(new LoginResponseDto
+            return Ok(new
             {
-                Token = token,
-                Username = user.Username,
-                Role = user.Role,
-                MemberId = member?.MemberId
+                success = true,
+                message = "Login successful.",
+                token,
+                username = user.Username,
+                role = user.Role,
+                memberId = member?.MemberId
             });
+        }
+
+        // =========================================================
+        // SECURE: CHANGE PASSWORD (MEMBERS, ADMINS, & STAFF)
+        // =========================================================
+        [Authorize]
+        [HttpPost("change-password")]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
+        {
+            var userId = _identity.GetUserId();
+            if (userId == null)
+                return Unauthorized(new { success = false, message = "User context authentication missing." });
+
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+            if (user == null)
+                return NotFound(new { success = false, message = "User account could not be found." });
+
+            // Verify current operational password validity
+            bool isOldPasswordValid = BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash);
+            if (!isOldPasswordValid)
+            {
+                return BadRequest(new { success = false, message = "Your current password entry is incorrect." });
+            }
+
+            // Write out fresh password hash metrics
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Password updated successfully!" });
         }
     }
 }

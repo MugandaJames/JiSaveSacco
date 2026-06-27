@@ -7,5 +7,7 @@
         public decimal LoanAmount { get; set; }
 
         public decimal InterestRate { get; set; }
+
+        public decimal EligibleAmount { get; set; }
     }
 }
