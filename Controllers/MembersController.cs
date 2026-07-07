@@ -159,7 +159,11 @@ namespace JiSaveSacco.API.Controllers
                 member.MemberId
             );
 
-            return Ok("Member approved successfully");
+            return Ok(new
+            {
+                success = true,
+                message = "Member approved successfully"
+            });
         }
 
         // =========================
@@ -192,7 +196,11 @@ namespace JiSaveSacco.API.Controllers
                 member.MemberId
             );
 
-            return Ok("Member rejected successfully");
+            return Ok(new
+            {
+                success = true,
+                message = "Member rejected successfully"
+            });
         }
 
         // =========================
@@ -225,7 +233,11 @@ namespace JiSaveSacco.API.Controllers
                 member.MemberId
             );
 
-            return Ok("Member deactivated successfully");
+            return Ok(new
+            {
+                success = true,
+                message = "Member deactivated successfully"
+            });
         }
     }
 }

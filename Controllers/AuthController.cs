@@ -114,9 +114,7 @@ namespace JiSaveSacco.API.Controllers
             return Ok(new
             {
                 success = true,
-                message = "Registration successful. Await admin approval.",
-                memberId = member.MemberId,
-                memberNo = member.MemberNo
+                message = "Registration successful. Your application has been received and is awaiting administrator approval."
             });
         }
 

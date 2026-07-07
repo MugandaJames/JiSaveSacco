@@ -208,7 +208,12 @@ namespace JiSaveSacco.API.Controllers
             await _audit.Log(_identity.GetUserId(), "Approved loan", "Loans", loan.LoanId);
             await _notify.Send(loan.MemberId, "Loan Approved", "Your loan has been approved successfully.");
 
-            return Ok("Loan approved");
+           
+            return Ok(new
+            {
+                success = true,
+                message = "Loan approved successfully"
+            });
         }
 
         // =========================================================
@@ -228,7 +233,11 @@ namespace JiSaveSacco.API.Controllers
             await _audit.Log(_identity.GetUserId(), "Rejected loan", "Loans", loan.LoanId);
             await _notify.Send(loan.MemberId, "Loan Rejected", "Your loan application was not approved.");
 
-            return Ok("Loan rejected");
+            return Ok(new
+            {
+                success = true,
+                message = "Loan rejected"
+            });
         }
 
         // =========================================================
