@@ -31,7 +31,11 @@ namespace JiSaveSacco.API.Controllers
             var pendingLoans = await _context.Loans.CountAsync(l => l.Status == "Pending");
 
             var totalSavings = await _context.SavingsTransactions
-                .SumAsync(s => (decimal?)s.Amount) ?? 0;
+                .SumAsync(s => (decimal?)(
+                    s.TransactionType == "Deposit"
+                        ? s.Amount
+                        : -s.Amount
+                )) ?? 0;
 
             var loanExposure = await _context.Loans
                 .Where(l => l.Status == "Approved")
@@ -50,6 +54,9 @@ namespace JiSaveSacco.API.Controllers
                     l.ApplicationDate
                 })
                 .ToListAsync();
+
+            var totalLoanRepaid = await _context.LoanRepayments
+                 .SumAsync(r => (decimal?)r.AmountPaid) ?? 0;
 
             // ================= RECENT ACTIVITIES (AUDIT FEED) =================
             var recentActivities = await _context.AuditLogs
@@ -110,7 +117,8 @@ namespace JiSaveSacco.API.Controllers
                     activeLoans,
                     pendingLoans,
                     totalSavings,
-                    loanExposure
+                    loanExposure,
+                    totalLoanRepaid
                 },
 
                 recentLoans,
@@ -136,8 +144,11 @@ namespace JiSaveSacco.API.Controllers
 
             var savings = await _context.SavingsTransactions
                 .Where(s => s.MemberId == memberId)
-                .Select(s => (decimal?)s.Amount)
-                .SumAsync() ?? 0;
+                .SumAsync(s => (decimal?)(
+                    s.TransactionType == "deposit"
+                        ? s.Amount
+                        : -s.Amount
+                )) ?? 0;
 
             var loans = await _context.Loans
                 .Where(l => l.MemberId == memberId)

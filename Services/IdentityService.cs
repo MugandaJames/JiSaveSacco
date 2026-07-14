@@ -11,23 +11,42 @@ namespace JiSaveSacco.API.Services
             _http = http;
         }
 
-        public int GetUserId()
+        public int? GetUserId()
         {
-            return int.Parse(
-                _http.HttpContext!.User.FindFirst("uid")!.Value
-            );
+            var value = _http.HttpContext?
+                .User
+                .FindFirst("uid")
+                ?.Value;
+
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            return int.TryParse(value, out var id)
+                ? id
+                : null;
         }
 
         public int? GetMemberId()
         {
-            var value = _http.HttpContext!.User.FindFirst("mid")?.Value;
+            var value = _http.HttpContext?
+                .User
+                .FindFirst("mid")
+                ?.Value;
 
-            return value == null ? null : int.Parse(value);
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            return int.TryParse(value, out var id)
+                ? id
+                : null;
         }
 
-        public string GetRole()
+        public string? GetRole()
         {
-            return _http.HttpContext!.User.FindFirst("role")!.Value;
+            return _http.HttpContext?
+                .User
+                .FindFirst("role")
+                ?.Value;
         }
     }
 }

@@ -4,9 +4,8 @@ using JiSaveSacco.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-// Import both namespaces because the files are split across folders in your Solution Explorer
-using JiSaveSacco.API.DTOs;          // For MemberWithdrawDto
-using JiSaveSacco.API.DTOs.Savings;  // For MemberDepositDto and SavingsResponseDto
+using JiSaveSacco.API.DTOs;          
+using JiSaveSacco.API.DTOs.Savings;  
 
 namespace JiSaveSacco.API.Controllers
 {
@@ -48,7 +47,7 @@ namespace JiSaveSacco.API.Controllers
                 .OrderByDescending(t => t.TransactionDate)
                 .Select(t => new
                 {
-                    // Perfectly maps to what your dashboard.js core parsing loops expect
+                   
                     TransactionDate = t.TransactionDate,
                     TransactionType = t.TransactionType,
                     Amount = t.Amount,
@@ -118,7 +117,11 @@ namespace JiSaveSacco.API.Controllers
             await _context.SaveChangesAsync();
 
             await _audit.Log(_identity.GetUserId(), "MEMBER DEPOSIT", "SavingsTransactions", tx.SavingId);
-            await _notify.Send(memberId.Value, "Deposit Successful", $"Deposit of {dto.Amount} received. Balance: {newBalance}");
+            await _notify.Send(
+                    memberId.Value,
+                    "Deposit Successful",
+                    $"Deposit of Ksh {dto.Amount:N2} received. Balance: Ksh {newBalance:N2}"
+                );
 
             return Ok(new { message = "Deposit successful", balance = newBalance });
         }
@@ -188,7 +191,11 @@ namespace JiSaveSacco.API.Controllers
             await _context.SaveChangesAsync();
 
             await _audit.Log(_identity.GetUserId(), "MEMBER WITHDRAWAL", "SavingsTransactions", tx.SavingId);
-            await _notify.Send(memberId.Value, "Withdrawal Successful", $"Withdrawal of {dto.Amount} processed. Balance: {newBalance}");
+            await _notify.Send(
+                    memberId.Value,
+                    "Withdrawal Successful",
+                    $"Withdrawal of Ksh {dto.Amount:N2} processed. Balance: Ksh {newBalance:N2}"
+                );
 
             return Ok(new { message = "Withdrawal successful", balance = newBalance });
         }

@@ -15,7 +15,7 @@ namespace JiSaveSacco.API.Controllers
     {
         private readonly AppDbContext _context;
         private readonly JwtService _jwtService;
-        private readonly IdentityService _identity; // Injected to cleanly pull user identity context from claims
+        private readonly IdentityService _identity; 
 
         public AuthController(
             AppDbContext context,
@@ -33,6 +33,35 @@ namespace JiSaveSacco.API.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterDto dto)
         {
+            // Validate request model first
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState
+                    .Where(x => x.Value!.Errors.Count > 0)
+                    .ToDictionary(
+                        kvp => kvp.Key,
+                        kvp => kvp.Value!.Errors.Select(e => e.ErrorMessage).ToArray()
+                    );
+
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Validation failed.",
+                    errors
+                });
+            }
+
+
+            dto.Username = dto.Username.Trim();
+            dto.Email = dto.Email.Trim().ToLower();
+            dto.Phone = dto.Phone.Trim();
+            dto.NationalId = dto.NationalId.Trim();
+            dto.FirstName = dto.FirstName.Trim();
+            dto.LastName = dto.LastName.Trim();
+            dto.Address = dto.Address.Trim();
+            dto.Occupation = dto.Occupation.Trim();
+
+
             // Check username
             var existingUser = await _context.Users
                 .FirstOrDefaultAsync(u => u.Username == dto.Username);
@@ -69,6 +98,20 @@ namespace JiSaveSacco.API.Controllers
                 {
                     success = false,
                     message = "Email already registered"
+                });
+            }
+
+
+            // Check Phone Number
+            var existingPhone = await _context.Members
+                .FirstOrDefaultAsync(m => m.Phone == dto.Phone);
+
+            if (existingPhone != null)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Phone number already registered"
                 });
             }
 
@@ -132,7 +175,7 @@ namespace JiSaveSacco.API.Controllers
                 return Unauthorized(new
                 {
                     success = false,
-                    message = "Invalid username or password"
+                    message = "Invalid username or password."
                 });
             }
 
@@ -145,12 +188,91 @@ namespace JiSaveSacco.API.Controllers
                 return Unauthorized(new
                 {
                     success = false,
-                    message = "Invalid username or password"
+                    message = "Invalid username or password."
                 });
             }
 
+            // Get member profile (will be null for admins/staff)
             var member = await _context.Members
                 .FirstOrDefaultAsync(m => m.UserId == user.UserId);
+
+            // =====================================================
+            // USER STATUS VALIDATION
+            // =====================================================
+
+            switch (user.Status?.Trim().ToLower())
+            {
+                case "pending":
+                    return Unauthorized(new
+                    {
+                        success = false,
+                        message = "Your membership application is still pending administrator approval."
+                    });
+
+                case "rejected":
+                    return Unauthorized(new
+                    {
+                        success = false,
+                        message = "Your membership application was rejected. Please contact JiSave SACCO."
+                    });
+
+                case "suspended":
+                    return Unauthorized(new
+                    {
+                        success = false,
+                        message = "Your account has been suspended. Please contact JiSave SACCO."
+                    });
+
+                case "inactive":
+                    return Unauthorized(new
+                    {
+                        success = false,
+                        message = "Your account is inactive."
+                    });
+            }
+
+            // =====================================================
+            // MEMBER STATUS VALIDATION
+            // Only applies to members
+            // =====================================================
+
+            if (member != null)
+            {
+                switch (member.Status?.Trim().ToLower())
+                {
+                    case "pending":
+                        return Unauthorized(new
+                        {
+                            success = false,
+                            message = "Your membership application is still pending administrator approval."
+                        });
+
+                    case "rejected":
+                        return Unauthorized(new
+                        {
+                            success = false,
+                            message = "Your membership application was rejected. Please contact JiSave SACCO."
+                        });
+
+                    case "suspended":
+                        return Unauthorized(new
+                        {
+                            success = false,
+                            message = "Your account has been suspended."
+                        });
+
+                    case "inactive":
+                        return Unauthorized(new
+                        {
+                            success = false,
+                            message = "Your account is inactive."
+                        });
+                }
+            }
+
+            // =====================================================
+            // LOGIN SUCCESS
+            // =====================================================
 
             var token = _jwtService.GenerateToken(user, member?.MemberId);
 

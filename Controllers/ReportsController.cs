@@ -203,31 +203,34 @@ namespace JiSaveSacco.API.Controllers
             });
         }
 
-        // =========================================================
-        // MEMBER: MY PERSONAL BALANCE POSITION REPORT
-        // =========================================================
         [Authorize(Roles = "Member")]
         [HttpGet("my-report")]
         public async Task<IActionResult> MyReport()
         {
             var memberId = _identity.GetMemberId();
-            if (memberId == null) return Unauthorized("Member not linked to account");
+
+            if (memberId == null)
+                return Unauthorized("Member not linked to account");
 
             var savings = await _context.SavingsTransactions
                 .Where(s => s.MemberId == memberId)
                 .OrderByDescending(s => s.SavingId)
-                .Select(s => s.BalanceAfter)
-                .FirstOrDefaultAsync();
+                .Select(s => (decimal?)s.BalanceAfter)
+                .FirstOrDefaultAsync() ?? 0;
 
-            var loans = await _context.Loans
+            var totalLoans = await _context.Loans
                 .Where(l => l.MemberId == memberId && l.Status == "Approved")
-                .SumAsync(l => l.OutstandingBalance);
+                .SumAsync(l => (decimal?)l.OutstandingBalance) ?? 0;
+
+            var activeLoans = await _context.Loans
+                .CountAsync(l => l.MemberId == memberId && l.Status == "Approved");
 
             return Ok(new
             {
                 totalSavings = savings,
-                totalLoans = loans,
-                netPosition = savings - loans
+                totalLoans,
+                activeLoans,
+                netPosition = savings - totalLoans
             });
         }
     }

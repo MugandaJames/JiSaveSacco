@@ -5,6 +5,7 @@ using JiSaveSacco.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Principal;
 
 namespace JiSaveSacco.API.Controllers
 {
@@ -65,7 +66,7 @@ namespace JiSaveSacco.API.Controllers
                 MultiplierApplied = SaccoMultiplier,
                 GrossEligibility = grossEligibleAmount,
                 ActiveDebtExposure = existingLoanBalance,
-                NetEligibleAmount = netEligibility // Maximum currency amount they can safely apply for right now
+                NetEligibleAmount = netEligibility 
             });
         }
 
@@ -271,7 +272,8 @@ namespace JiSaveSacco.API.Controllers
 
             await _context.SaveChangesAsync();
             await _audit.Log(_identity.GetUserId(), "Loan repayment", "LoanRepayments", repayment.RepaymentId);
-            await _notify.Send(loan.MemberId, "Payment Received", $"You paid {dto.AmountPaid}. Remaining balance: {loan.OutstandingBalance}");
+            await _notify.Send(
+                          loan.MemberId, "Payment Received", $"You paid Ksh {dto.AmountPaid:N2}. Remaining balance: Ksh {loan.OutstandingBalance:N2}");
 
             return Ok(new { message = "Repayment successful", remaining = loan.OutstandingBalance });
         }
@@ -293,5 +295,34 @@ namespace JiSaveSacco.API.Controllers
 
             return Ok(loans);
         }
-    }
+
+
+
+    [Authorize(Roles = "Member")]
+        [HttpGet("my-repayments")]
+        public async Task<IActionResult> MyRepayments()
+        {
+            var memberId = _identity.GetMemberId();
+
+            if (memberId == null)
+                return Unauthorized("Member identity missing");
+
+            var repayments = await _context.LoanRepayments
+                .Include(r => r.Loan)
+                .Where(r => r.Loan.MemberId == memberId)
+                .OrderByDescending(r => r.PaymentDate)
+                .Select(r => new LoanRepaymentResponseDto
+                {
+                    RepaymentId = r.RepaymentId,
+                    LoanId = r.LoanId,
+                    LoanAmount = r.Loan.LoanAmount,
+                    AmountPaid = r.AmountPaid,
+                    RemainingBalance = r.RemainingBalance,
+                    PaymentDate = r.PaymentDate
+                })
+                .ToListAsync();
+
+            return Ok(repayments);
+        }
+}
 }
